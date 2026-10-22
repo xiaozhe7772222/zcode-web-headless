@@ -1,0 +1,33 @@
+# 仅构建 Web 端（无 Electron）的镜像
+# 用法：
+#   docker build -f Dockerfile.web -t zcode-web .
+#   docker run --rm -p 3030:3030 -v "$PWD/project:/workspace" zcode-web
+
+FROM node:24-bookworm AS build
+WORKDIR /src
+RUN corepack enable
+COPY . .
+# 上游已知问题：@zcode/shared 是纯源码包、无 build 脚本，SEA/TUI 打包会因缺 dist 中断。
+# 纯 Web 不需要 TUI 资源，占位即可。
+RUN mkdir -p packages/shared/dist && printf 'export {};\n' > packages/shared/dist/index.js
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RUN pnpm install --frozen-lockfile
+RUN pnpm build:bootstrap && pnpm build:zcode --base-url https://example.invalid/zcode/
+
+FROM node:24-bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates bash ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /src/dist/zcode/releases /tmp/releases
+RUN set -eux; \
+    f="$(ls /tmp/releases/*/zcode-*.tar.gz | head -n 1)"; \
+    tar -xzf "$f" -C /app; \
+    rm -rf /tmp/releases
+RUN mkdir -p /workspace
+ENV ZCODE_WEB_LOCAL_STORAGE=1 \
+    ZCODE_ENV=production
+EXPOSE 3030
+WORKDIR /workspace
+CMD ["node", "/app/zcode/bin/zcode.mjs", "--web", "--host", "0.0.0.0", "--port", "3030", "--workspace", "/workspace", "--no-open"]

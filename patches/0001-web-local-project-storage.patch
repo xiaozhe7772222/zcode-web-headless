@@ -1,0 +1,54 @@
+diff --git a/packages/services/src/node.ts b/packages/services/src/node.ts
+--- a/packages/services/src/node.ts
++++ b/packages/services/src/node.ts
+@@ -3223,11 +3223,23 @@
+   sourceServerId: string;
+   zcodeBuiltinProviderConfigFilePath: string;
+   providerProvisioningTargetEnabled?: boolean;
++  /**
++   * 纯 Web 模式（`zcode --web`）没有桌面 Host 进程，浏览器只能用 `hostId: "local"`。
++   * 此时项目存储必须落在本机 owner（undefined/"local"），否则 local 请求会被路由到
++   * 一个永不离线的远端 Host，导致 readDirectory / reserveCreatedTask 全部 host-offline。
++   */
++  localProjectStorage?: boolean;
+ }) {
+-  const projectStorageHostId = remoteHostIdFromWorkspaceIdentity(
+-    buildServerRemoteWorkspaceIdentity({ serverId: options.sourceServerId, workspacePath: "/" }),
+-  );
+-  if (!projectStorageHostId) throw new Error("Invalid Source Server storage identity");
++  const projectStorageHostId = options.localProjectStorage
++    ? undefined
++    : (remoteHostIdFromWorkspaceIdentity(
++        buildServerRemoteWorkspaceIdentity({
++          serverId: options.sourceServerId,
++          workspacePath: "/",
++        }),
++      ) ?? undefined);
++  if (!options.localProjectStorage && !projectStorageHostId)
++    throw new Error("Invalid Source Server storage identity");
+   await migrateApplicationStorage(await createSettingService().get(), projectStorageHostId);
+   const workspaceAliasRepo = new SourceServerWorkspaceAliasRepo();
+   const workspaceIdentityMapper = new SourceServerWorkspaceIdentityMapper();
+
+diff --git a/packages/server/src/entry-http.ts b/packages/server/src/entry-http.ts
+--- a/packages/server/src/entry-http.ts
++++ b/packages/server/src/entry-http.ts
+@@ -20,12 +20,18 @@
+   const authToken = process.env["ZCODE_SERVER_AUTH_TOKEN"]?.trim() || undefined;
+   const topicResourcePeers = createTopicResourcePeers();
+   const serverId = resolveHttpServerId();
++  // 纯 Web 模式（浏览器直连本机 server）没有桌面 Host 进程：把项目存储归到本机 owner，
++  // 浏览器发出的 hostId: "local" 才能落到这台机器的文件系统，而不是被当成离线远端设备。
++  // 需要保留 Source Server（远程 workspace）语义时设 ZCODE_WEB_LOCAL_STORAGE=0。
++  const localProjectStorage =
++    process.env["ZCODE_WEB_LOCAL_STORAGE"] !== "0" && Boolean(staticRoot);
+   const { services, workspaceIdentityMapper, migrationFailedPathCount } =
+     await createServerHostServices({
+       topicResourceRelayChannel: (request) => topicResourcePeers.getChannel(request),
+       sourceServerId: serverId,
+       zcodeBuiltinProviderConfigFilePath,
+       providerProvisioningTargetEnabled: Boolean(authToken),
++      localProjectStorage,
+     });
+ 
+   createHttpServer(services, port, {
