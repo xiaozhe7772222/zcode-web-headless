@@ -80,6 +80,26 @@ node bin/zcode.mjs --web --host 0.0.0.0 --port 3030
 
 首次在网页里创建项目会弹出 **Trust this folder?**，确认后 agent 才能读写该目录。
 
+## 安卓（Termux + proot）
+
+未 root 的安卓手机也能跑：
+
+```bash
+pkg install proot-distro termux-api
+proot-distro install ubuntu
+proot-distro login ubuntu          # 在里面装 arm64 glibc 版 Node 24
+termux-wake-lock
+node ~/zcode/bin/zcode.mjs --web --workspace ~/projects/demo --port 3030 --no-open
+```
+
+手机浏览器打开 `http://127.0.0.1:3030` 即可。
+
+- `chroot` 需要 root，手机上基本拿不到，所以走 `proot`（ptrace 路径重定向，性能损耗约 2–5 倍）。
+- 必须用 **linux-arm64 + glibc** 的 Node；Termux 原生 Node（Bionic）和 Alpine（musl）都加载不了 `node-pty`。
+- 建议电脑上构建好 tar 包再传手机，手机端 `pnpm install` 容易 OOM。
+
+完整步骤、日常启动脚本、排错表见 [ANDROID.zh-CN.md](ANDROID.zh-CN.md)。
+
 ## 模型配置
 
 支持任何 OpenAI 兼容端点。编辑 `~/.zcode/v2/provider_config.json`：

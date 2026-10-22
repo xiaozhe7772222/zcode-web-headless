@@ -15,6 +15,7 @@ ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Age
 
 > **本仓库的改动**：让浏览器端脱离桌面端独立运行（`zcode --web` 可直接建项目、读写文件、执行命令）。
 > 改动说明、构建方式、arm64 验证与容器用法见 [docs/web-headless/README.zh-CN.md](docs/web-headless/README.zh-CN.md)，
+> 安卓（Termux + proot）部署见 [docs/web-headless/ANDROID.zh-CN.md](docs/web-headless/ANDROID.zh-CN.md)，
 > 补丁位于 [patches/0001-web-local-project-storage.patch](patches/0001-web-local-project-storage.patch)。
 
 ## 更新
