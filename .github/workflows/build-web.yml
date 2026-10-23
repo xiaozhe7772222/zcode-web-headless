@@ -1,0 +1,78 @@
+name: build-web
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # 上游已知问题：@zcode/shared 是纯源码包、没有 build 脚本，
+      # SEA/TUI 打包阶段会因缺少 dist 中断。纯 Web 不需要 TUI 资源。
+      - name: Stub @zcode/shared dist
+        run: |
+          mkdir -p packages/shared/dist
+          printf 'export {};\n' > packages/shared/dist/index.js
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: |
+          pnpm build:bootstrap
+          pnpm build:zcode --base-url "https://github.com/${{ github.repository }}/releases/latest/download/"
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          src="$(ls dist/zcode/releases/*/zcode-*.tar.gz | head -n1)"
+          out="zcode-${version}-linux.tar.gz"
+          cp "$src" "$out"
+          sha256sum "$out" > "$out.sha256"
+          echo "ASSET=$out" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zcode-web-linux
+          path: |
+            zcode-*-linux.tar.gz
+            zcode-*-linux.tar.gz.sha256
+          retention-days: 30
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            zcode-*-linux.tar.gz
+            zcode-*-linux.tar.gz.sha256
+          body: |
+            Prebuilt ZCode web package (Linux x86_64/arm64, Node >= 24 required).
+
+            ```bash
+            curl -L -o zcode.tar.gz https://github.com/${{ github.repository }}/releases/latest/download/${{ env.ASSET }}
+            mkdir -p ~/zcode && tar -xzf zcode.tar.gz -C ~
+            cd ~/zcode && node bin/zcode.mjs --web --workspace ~/projects/demo --port 3030 --no-open
+            ```
